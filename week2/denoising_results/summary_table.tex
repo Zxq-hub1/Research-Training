@@ -1,0 +1,29 @@
+\begin{table}[ht]
+\centering
+\caption{Denoising Performance Comparison on Set14 Dataset}
+\label{tab:results}
+\begin{tabular}{lcccrrrrr}
+\toprule
+Noise Type & Intensity & Algorithm & PSNR (dB) & SSIM & Time (s) & PSNR Imp. (\%) & SSIM Imp. (\%) \\
+\midrule
+Gaussian & 15.0 & ISTA & 28.12 & 0.7898 & 0.7810 & -- & -- \\
+ & & BM3D & 25.51 & 0.6894 & 1.1215 & -9.3\% & -12.7\% \\
+\midrule
+Gaussian & 25.0 & ISTA & 25.48 & 0.6379 & 0.8072 & -- & -- \\
+ & & BM3D & 25.16 & 0.6780 & 1.1104 & -1.3\% & 6.3\% \\
+\midrule
+Gaussian & 50.0 & ISTA & 18.47 & 0.3149 & 0.8237 & -- & -- \\
+ & & BM3D & 23.99 & 0.6240 & 1.1028 & 29.9\% & 98.2\% \\
+\midrule
+Salt-Pepper & 0.05 & ISTA & 22.83 & 0.5199 & 0.8199 & -- & -- \\
+ & & BM3D & 29.65 & 0.8670 & 1.1084 & 29.9\% & 66.7\% \\
+\midrule
+Salt-Pepper & 0.1 & ISTA & 20.31 & 0.3899 & 0.8268 & -- & -- \\
+ & & BM3D & 28.77 & 0.8392 & 1.1016 & 41.7\% & 115.2\% \\
+\midrule
+Salt-Pepper & 0.2 & ISTA & 16.76 & 0.2421 & 0.8281 & -- & -- \\
+ & & BM3D & 25.69 & 0.7197 & 1.1307 & 53.3\% & 197.3\% \\
+\midrule
+\bottomrule
+\end{tabular}
+\end{table}
