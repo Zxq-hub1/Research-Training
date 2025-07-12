@@ -18,6 +18,29 @@ Python版本：Python 3.9
 | 可视化  | Matplotlib   | 对比图像        |
 | 终端显示 | tqdm         | 显示进度条       |
 
+###  安装依赖
+```bash
+pip install numpy opencv-python matplotlib scikit-image bm3d tqdm
+```
+**主要依赖库**：
+- OpenCV
+- NumPy
+- scikit-image
+- BM3D
+- Matplotlib
+- Tqdm
+
+## 2.3 快速开始
+1. **下载Set14数据集**：
+   ```bash
+   https://www.kaggle.com/datasets/ll01dm/set-5-14-super-resolution-dataset
+   ```
+   解压到"project/datasets/Set14"文件夹
+
+2. **运行实验**：
+   ```python
+   python denoise.py
+
 # 3 实验方法
 
 ## 3.1 文件介绍
