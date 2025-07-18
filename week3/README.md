@@ -99,7 +99,7 @@ project
 | **ADMM** |16.52426896      | 0.186083478     | 0.00409627      |
 
 （new)添加椒盐噪声，并进行BM3D、ISTA、FISTA、ADMM去噪：
-![jiaoyan]()
+![jiaoyan](https://github.com/Zxq-hub1/Research-Training/blob/main/week3/ppt3/denoising_ppt3.png?raw=true)
 
 
 ##  实验结论
