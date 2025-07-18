@@ -1,8 +1,5 @@
 # **FISTA、ADMM与BM3D、ISTA算法在图像去噪中的对比**
 
-![Python](https://img.shields.io/badge/Python-3.9%2B-blue)
-![OpenCV](https://img.shields.io/badge/OpenCV-4.12%2B-green)
-
 ## 实验目标
 本实验对比分析以下图像去噪算法在Set14数据集上的表现：
 1. FISTA (快速迭代收缩阈值算法)
