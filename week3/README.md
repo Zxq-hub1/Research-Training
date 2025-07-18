@@ -87,7 +87,7 @@ project
 ```
 
 ##  实验结果示例
-添加高斯噪声，并进行BM3D、ISTA、FISTA、ADMM去噪:
+1)添加高斯噪声，并进行BM3D、ISTA、FISTA、ADMM去噪:
 ![添加高斯噪声，并进行BM3D、ISTA、FISTA、ADMM去噪](https://github.com/Zxq-hub1/Research-Training/blob/main/week3/ppt3/denoising.png?raw=true)
 
 | Algorithm    | PSNR | SSIM | Time        |
@@ -98,7 +98,7 @@ project
 | **FISTA_TV** | 13.27797667     | 0.176061565    | 0.805597544      |
 | **ADMM** |16.52426896      | 0.186083478     | 0.00409627      |
 
-（new)添加椒盐噪声，并进行BM3D、ISTA、FISTA、ADMM去噪：
+2)（new)添加椒盐噪声，并进行BM3D、ISTA、FISTA、ADMM去噪：
 ![jiaoyan](https://github.com/Zxq-hub1/Research-Training/blob/main/week3/ppt3/denoising_ppt3.png?raw=true)
 
 | Algorithm    | PSNR | SSIM | Time        |
