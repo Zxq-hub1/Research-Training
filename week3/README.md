@@ -84,7 +84,7 @@ project
 
 ##  实验结果示例
 
-[对ppt3添加高斯噪声（=25），并进行BM3D、ISTA、FISTA、ADMM去噪]{https://github.com/Zxq-hub1/Research-Training/blob/main/week3/ppt3/denoising_ppt3.png?raw=true}
+![对ppt3添加高斯噪声（=25），并进行BM3D、ISTA、FISTA、ADMM去噪](https://github.com/Zxq-hub1/Research-Training/blob/main/week3/ppt3/denoising_ppt3.png?raw=true)
 
 | Algorithm    | PSNR | SSIM | Time        |
 |---------------|-----------|-----------|-------------|
