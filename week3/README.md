@@ -37,10 +37,14 @@ pip install numpy opencv-python scikit-image pywavelets bm3d matplotlib tqdm sci
    ```python
    python test.py
    ```
+   （new)添加不同噪声（高斯、椒盐）以及对噪声设置不同强度的代码
+   ```python
+   python test1.py
+   ```
 
-3. **查看结果**：
+4. **查看结果**：
    - 去噪效果图及收敛曲线：`results`
-   - 细节结果：`results/detailed_results。csv`
+   - 细节结果：`results/detailed_results.csv`
    - 量化指标：`results/summary.csv`
 
 
@@ -83,7 +87,7 @@ project
 ```
 
 ##  实验结果示例
-
+添加高斯噪声，并进行BM3D、ISTA、FISTA、ADMM去噪:
 ![添加高斯噪声，并进行BM3D、ISTA、FISTA、ADMM去噪](https://github.com/Zxq-hub1/Research-Training/blob/main/week3/ppt3/denoising.png?raw=true)
 
 | Algorithm    | PSNR | SSIM | Time        |
@@ -93,6 +97,9 @@ project
 | **FISTA**    | 16.70023976     | 0.312860403   | 0.227494478 |
 | **FISTA_TV** | 13.27797667     | 0.176061565    | 0.805597544      |
 | **ADMM** |16.52426896      | 0.186083478     | 0.00409627      |
+
+（new)添加椒盐噪声，并进行BM3D、ISTA、FISTA、ADMM去噪：
+![jiaoyan]()
 
 
 ##  实验结论
