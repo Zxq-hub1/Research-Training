@@ -101,6 +101,14 @@ project
 （new)添加椒盐噪声，并进行BM3D、ISTA、FISTA、ADMM去噪：
 ![jiaoyan](https://github.com/Zxq-hub1/Research-Training/blob/main/week3/ppt3/denoising_ppt3.png?raw=true)
 
+| Algorithm    | PSNR | SSIM | Time        |
+|---------------|-----------|-----------|-------------|
+| **BM3D**    | 15.93173418      | 0.448973081      | 0.476116896 |
+| **ISTA**    | 15.19747616     | 0.440929857     | 0.151954651 |
+| **FISTA**    | 14.94006471     | 	0.43898138   | 0.233192682 |
+| **FISTA_TV** | 10.25112587     |0.405212547    | 0.825902462      |
+| **ADMM** |14.28422841     |0.181474197   | 0.010102034     |
+
 
 ##  实验结论
 
