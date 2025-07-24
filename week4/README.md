@@ -55,16 +55,16 @@ pip install numpy opencv-python scikit-image pywavelets bm3d matplotlib tqdm sci
     ]
 
 # ISTA参数
-ista_params = {'lambda_'= 15,'max_iter'= 100,'tol'= 1e-6,'wavelet': 'db8','level' = 4}
+ista_params = {'lambda_'=15,'max_iter'=100,'tol'=1e-6,'wavelet': 'db8','level'=4}
 
 # FISTA_L1参数
-fista_l1_params = {'lambda_'= 15,'max_iter'= 100,'tol'= 1e-6,'wavelet': 'db8','level' = 4}
+fista_l1_params = {'lambda_'=15,'max_iter'=100,'tol'=1e-6,'wavelet': 'db8','level'=4}
 
 # FISTA_TV参数
 fista_tv_params = {'lambda_'=0.1,'max_iter'=100, 'tol'=1e-6}
 
-# ADMM_TV参数
-admm_tv_params = {'lambda_'= 0.1,'rho'=1.0, 'max_iter'=100, 'tol'=1e-6}
+# ADMM参数
+admm_tv_params = {'lambda_'=0.1,'rho'=1.0, 'max_iter'=100, 'tol'=1e-6}
 ```
 
 ##  项目结构
