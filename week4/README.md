@@ -42,7 +42,7 @@ pip install numpy opencv-python scikit-image pywavelets bm3d matplotlib tqdm sci
 
 
 ##  参数配置
-在`test.py`中修改实验参数：
+在`algorithm4.py`中修改实验参数：
 ```python
 # 定义噪声配置
     noise_configs = [
