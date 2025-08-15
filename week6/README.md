@@ -41,7 +41,7 @@ Python:3.9
    ```bash
    https://www.kaggle.com/datasets/ll01dm/set-5-14-super-resolution-dataset
    ```
-   解压到代码目录下的"project/week5/Set14"文件夹
+   解压到代码目录下的"project/week6/data/Test/Set14"文件夹
    
 
 3. **运行实验**：
@@ -142,3 +142,4 @@ ISTA算法在所有测试场景中均表现最差，特别是在高噪声条件�
 
 
 ---
+
