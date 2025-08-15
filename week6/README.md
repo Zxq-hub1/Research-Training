@@ -42,15 +42,14 @@ Python:3.9
    https://www.kaggle.com/datasets/ll01dm/set-5-14-super-resolution-dataset
    ```
    解压到代码目录下的"project/week5/Set14"文件夹
+   
 
-   噪声类型：高斯噪声（σ=15/25/50） 椒盐噪声（密度=5%/10%/20%）
-
-2. **运行实验**：
+3. **运行实验**：
    ```python
    python new.py
    ```
 
-3. **查看结果**：
+4. **查看结果**：
    - 去噪效果图：`results2/image`
    - 细节结果：`results2/detailed_results.xlsx`
    - 量化指标：`results2/summary.csv`
@@ -140,5 +139,6 @@ FISTA和ADMM算法表现出较好的鲁棒性，在中低噪声水平下性能�
 ISTA算法在所有测试场景中均表现最差，特别是在高噪声条件下PSNR仅16.88dB，应用价值有限。
 
 综合来看，在实际应用中应根据具体需求选择合适的去噪算法：对于图像质量要求严格的场景推荐采用BM3D算法；在需要平衡处理速度和去噪效果的场合可考虑FISTA或ADMM算法；而DnCNN和ISTA算法则仅适用于特定低噪声场景或对图像质量要求不高的应用。
+
 
 ---
