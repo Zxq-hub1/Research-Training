@@ -1,0 +1,850 @@
+import numpy as np
+import cv2
+import matplotlib.pyplot as plt
+from skimage.metrics import peak_signal_noise_ratio as psnr
+from skimage.metrics import structural_similarity as ssim
+from skimage.restoration import denoise_tv_chambolle, denoise_nl_means, estimate_sigma
+import pywt
+import time
+import os
+import bm3d
+from scipy.fftpack import dct, idct
+import glob
+import pandas as pd
+from tqdm import tqdm
+import scipy.fft
+from skimage.util import random_noise
+import tensorflow as tf
+from keras.models import load_model
+from keras.layers import Input, Conv2D, Activation
+from keras.models import Model
+from keras.saving import register_keras_serializable
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+
+# 1. 定义并注册自定义损失函数
+@register_keras_serializable(package="Custom")
+def sum_squared_error(y_true, y_pred):
+    return tf.reduce_sum(tf.square(y_true - y_pred))
+
+
+# 2. 加载模型时指定自定义对象
+model = tf.keras.models.load_model(
+    'models/DnCNN_sigma25/final_model.keras',
+    custom_objects={'sum_squared_error': sum_squared_error}
+)
+
+
+# FFDNet模型定义
+class FFDNet(nn.Module):
+    """FFDNet模型实现"""
+
+    def __init__(self, in_channels=1):
+        super(FFDNet, self).__init__()
+
+        # 第一层：卷积 + ReLU
+        self.conv1 = nn.Conv2d(in_channels + 1, 64, kernel_size=3, padding=1)
+        self.relu1 = nn.ReLU(inplace=True)
+
+        # 中间层：多个卷积 + ReLU
+        self.conv2 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
+        self.relu2 = nn.ReLU(inplace=True)
+        self.conv3 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
+        self.relu3 = nn.ReLU(inplace=True)
+        self.conv4 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
+        self.relu4 = nn.ReLU(inplace=True)
+
+        # 最后层：卷积
+        self.conv5 = nn.Conv2d(64, in_channels, kernel_size=3, padding=1)
+
+    def forward(self, x, noise_map):
+        # 拼接噪声图和输入图像
+        x = torch.cat([x, noise_map], dim=1)
+
+        x = self.relu1(self.conv1(x))
+        x = self.relu2(self.conv2(x))
+        x = self.relu3(self.conv3(x))
+        x = self.relu4(self.conv4(x))
+        x = self.conv5(x)
+
+        return x
+
+
+# U-Net模型定义
+class UNet(nn.Module):
+    """U-Net去噪模型实现（与训练脚本保持一致）"""
+
+    def __init__(self, in_channels=1, out_channels=1):
+        super(UNet, self).__init__()
+
+        # 编码器 (下采样)
+        self.enc1 = self._block(in_channels, 64)
+        self.enc2 = self._block(64, 128)
+        self.enc3 = self._block(128, 256)
+        self.enc4 = self._block(256, 512)
+
+        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
+
+        # 瓶颈层
+        self.bottleneck = self._block(512, 1024)
+
+        # 解码器 (上采样)
+        self.upconv4 = nn.ConvTranspose2d(1024, 512, kernel_size=2, stride=2)
+        self.dec4 = self._block(1024, 512)
+
+        self.upconv3 = nn.ConvTranspose2d(512, 256, kernel_size=2, stride=2)
+        self.dec3 = self._block(512, 256)
+
+        self.upconv2 = nn.ConvTranspose2d(256, 128, kernel_size=2, stride=2)
+        self.dec2 = self._block(256, 128)
+
+        self.upconv1 = nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2)
+        self.dec1 = self._block(128, 64)
+
+        # 最终卷积层
+        self.final = nn.Conv2d(64, out_channels, kernel_size=1)
+
+    def forward(self, x):
+        # 编码路径
+        enc1 = self.enc1(x)
+        enc2 = self.enc2(self.pool(enc1))
+        enc3 = self.enc3(self.pool(enc2))
+        enc4 = self.enc4(self.pool(enc3))
+
+        # 瓶颈
+        bottleneck = self.bottleneck(self.pool(enc4))
+
+        # 解码路径
+        dec4 = self.upconv4(bottleneck)
+        dec4 = torch.cat((dec4, enc4), dim=1)
+        dec4 = self.dec4(dec4)
+
+        dec3 = self.upconv3(dec4)
+        dec3 = torch.cat((dec3, enc3), dim=1)
+        dec3 = self.dec3(dec3)
+
+        dec2 = self.upconv2(dec3)
+        dec2 = torch.cat((dec2, enc2), dim=1)
+        dec2 = self.dec2(dec2)
+
+        dec1 = self.upconv1(dec2)
+        dec1 = torch.cat((dec1, enc1), dim=1)
+        dec1 = self.dec1(dec1)
+
+        return torch.sigmoid(self.final(dec1))
+
+    def _block(self, in_channels, features):
+        return nn.Sequential(
+            nn.Conv2d(in_channels, features, kernel_size=3, padding=1),
+            nn.BatchNorm2d(features),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(features, features, kernel_size=3, padding=1),
+            nn.BatchNorm2d(features),
+            nn.ReLU(inplace=True)
+        )
+
+
+def load_ffdnet_model(device='cpu'):
+    """加载预训练的FFDNet模型，支持从完整checkpoint中提取模型权重"""
+    model = FFDNet(in_channels=1)
+
+    # 尝试从多个位置加载预训练权重
+    possible_paths = [
+        os.path.join('models/FFDNet', 'ffdnet_gray.pth'),
+        os.path.join('models/FFDNet/checkpoints', 'best_model.pth'),
+        os.path.join('models/FFDNet', 'ffdnet_gray_final.pth'),
+        'ffdnet_gray_final.pth'
+    ]
+
+    model_loaded = False
+    for model_path in possible_paths:
+        if os.path.exists(model_path):
+            try:
+                checkpoint = torch.load(model_path, map_location=device, weights_only=False)
+
+                # 如果是完整的checkpoint，提取模型权重
+                if 'model_state_dict' in checkpoint:
+                    state_dict = checkpoint['model_state_dict']
+                else:
+                    state_dict = checkpoint
+
+                # 移除可能的 'module.' 前缀（如果是DataParallel训练的）
+                from collections import OrderedDict
+                new_state_dict = OrderedDict()
+                for k, v in state_dict.items():
+                    name = k[7:] if k.startswith('module.') else k
+                    new_state_dict[name] = v
+
+                model.load_state_dict(new_state_dict)
+                print(f"✅ 成功加载 FFDNet 模型权重：{model_path}")
+                model_loaded = True
+                break
+            except Exception as e:
+                print(f"❌ 加载模型失败：{model_path}，错误：{e}")
+                continue
+
+    if not model_loaded:
+        print("⚠️ 未找到可用的FFDNet权重，使用随机初始化的模型。")
+
+    model.to(device)
+    model.eval()
+    return model
+
+
+def load_unet_model(device='cpu'):
+    """加载预训练的U-Net模型"""
+    model = UNet(in_channels=1, out_channels=1)
+
+    # 尝试从多个位置加载预训练权重
+    possible_paths = [
+        os.path.join('models/UNet', 'unet_gray_sigma25.pth'),
+        os.path.join('models/UNet/checkpoints', 'best_model_unet_gray.pth'),
+        os.path.join('models/UNet', 'unet_gray_final.pth'),
+        'unet_gray_sigma25.pth'
+    ]
+
+    model_loaded = False
+    for model_path in possible_paths:
+        if os.path.exists(model_path):
+            try:
+                checkpoint = torch.load(model_path, map_location=device, weights_only=False)
+
+                # 如果是完整的checkpoint，提取模型权重
+                if 'model_state_dict' in checkpoint:
+                    state_dict = checkpoint['model_state_dict']
+                else:
+                    state_dict = checkpoint
+
+                # 移除可能的 'module.' 前缀
+                from collections import OrderedDict
+                new_state_dict = OrderedDict()
+                for k, v in state_dict.items():
+                    name = k[7:] if k.startswith('module.') else k
+                    new_state_dict[name] = v
+
+                model.load_state_dict(new_state_dict)
+                print(f"✅ 成功加载 U-Net 模型权重：{model_path}")
+                model_loaded = True
+                break
+            except Exception as e:
+                print(f"❌ 加载U-Net模型失败：{model_path}，错误：{e}")
+                continue
+
+    if not model_loaded:
+        print("⚠️ 未找到可用的U-Net权重，使用随机初始化的模型。")
+
+    model.to(device)
+    model.eval()
+    return model
+
+
+# 全局加载模型，避免重复加载
+try:
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    ffdnet_model = load_ffdnet_model(device=device)
+    unet_model = load_unet_model(device=device)
+except Exception as e:
+    print(f"Warning: Could not load models. Error: {e}")
+    ffdnet_model = None
+    unet_model = None
+
+
+# 添加DnCNN模型加载函数
+def load_dncnn_model():
+    """加载预训练的DnCNN模型"""
+    # 模型文件位于当前目录下的models/DnCNN_sigma25文件夹中
+    model_path = os.path.join('models/DnCNN_sigma25', 'final_model.keras')
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(f"DnCNN model not found at {model_path}. Please download the pretrained model.")
+    return load_model(model_path)
+
+
+# 全局加载DnCNN模型，避免重复加载
+try:
+    dncnn_model = load_dncnn_model()
+except Exception as e:
+    print(f"Warning: Could not load DnCNN model. DnCNN will be disabled. Error: {e}")
+    dncnn_model = None
+
+
+def add_gaussian_noise(image, sigma=25):
+    """添加高斯噪声"""
+    noise = np.random.normal(0, sigma, image.shape).astype(np.float32)
+    noisy = np.clip(image + noise, 0, 255).astype(np.uint8)
+    return noisy
+
+
+def soft_threshold(x, threshold):
+    """软阈值函数，处理复数情况"""
+    if np.iscomplexobj(x):
+        magnitude = np.abs(x)
+        phase = np.angle(x)
+        thresholded = np.maximum(magnitude - threshold, 0)
+        return thresholded * np.exp(1j * phase)
+    else:
+        return np.sign(x) * np.maximum(np.abs(x) - threshold, 0)
+
+
+def ista_l1(noisy_img, clean_img, lambda_=15, max_iter=100, tol=1e-6, wavelet='db8', level=3):
+    """ISTA算法（L1小波正则化）"""
+    noisy = noisy_img.astype(np.float32)
+    x = noisy.copy()
+    last_x = x.copy()
+    psnrs = []
+    ssims = []
+
+    # 预计算小波分解结构
+    coeffs = pywt.wavedec2(noisy, wavelet, level=level)
+    coeffs_shape = [coeffs[0].shape]
+    for j in range(1, len(coeffs)):
+        coeffs_shape.append(tuple(c.shape for c in coeffs[j]))
+
+    # 学习率设置
+    L = 4.0  # Lipschitz常数估计
+
+    for i in range(max_iter):
+        # 小波分解
+        coeffs = pywt.wavedec2(x, wavelet, level=level)
+
+        # 阈值处理高频系数
+        coeffs_thresh = [coeffs[0]]  # 保留低频分量
+
+        for j in range(1, len(coeffs)):
+            # 对每个方向的高频系数进行阈值处理
+            threshold = lambda_ * (0.5 ** j)  # 尺度相关的阈值
+            cH, cV, cD = [soft_threshold(c, threshold) for c in coeffs[j]]
+            coeffs_thresh.append((cH, cV, cD))
+
+        # 小波重构
+        x_new = pywt.waverec2(coeffs_thresh, wavelet)
+
+        # 数据保真项更新
+        x_new = x_new + (noisy - x_new) / L
+
+        # 投影到有效范围
+        x_new = np.clip(x_new, 0, 255)
+
+        # 确保数值稳定性
+        x_new = np.nan_to_num(x_new, nan=0.0, posinf=255, neginf=0)
+
+        # 计算评估指标
+        if i % 5 == 0 or i == max_iter - 1:
+            denoised_uint8 = x_new.astype(np.uint8)
+            psnr_val = psnr(clean_img, denoised_uint8, data_range=255)
+            ssim_val = ssim(clean_img, denoised_uint8, data_range=255)
+            psnrs.append(psnr_val)
+            ssims.append(ssim_val)
+
+        # 检查收敛性
+        if np.linalg.norm(x_new - last_x) / (np.linalg.norm(last_x) + 1e-10) < tol:
+            break
+
+        last_x = x_new.copy()
+        x = x_new.copy()
+
+    return x.astype(np.uint8), psnrs, ssims
+
+
+def fista_tv(noisy_img, clean_img, lambda_=None, max_iter=100, tol=1e-4):
+    """改进的 FISTA-TV 去噪算法，带背追踪线搜索与自适应 λ"""
+    noisy = noisy_img.astype(np.float32) / 255.0
+    h, w = noisy.shape
+
+    # 自适应 λ 设置
+    if lambda_ is None:
+        sigma_est = estimate_sigma(noisy_img, average_sigmas=True)
+        lambda_ = 0.8 * sigma_est / 255.0
+
+    # 预去噪 warm-start
+    x = denoise_tv_chambolle(noisy, weight=lambda_, max_num_iter=100)
+    y = x.copy()
+    t = 1.0
+    last_x = x.copy()
+    psnrs = []
+    ssims = []
+
+    # 估计 Lipschitz 常数 L
+    L = 8.0  # TV 算子的最大特征值约为 8（经验值）
+
+    def grad_tv(img):
+        # 计算 TV 正则项的梯度（近似）
+        return denoise_tv_chambolle(img, weight=lambda_ / L, max_num_iter=1)
+
+    for i in range(max_iter):
+        # 梯度下降步
+        grad_step = grad_tv(y)
+        x_new = y + (noisy - y) / L
+
+        # TV 去噪步
+        x_new = denoise_tv_chambolle(x_new, weight=lambda_ / L, max_num_iter=5)
+
+        # FISTA 加速
+        t_new = (1 + np.sqrt(1 + 4 * t ** 2)) / 2
+        y_new = x_new + ((t - 1) / t_new) * (x_new - last_x)
+
+        # 投影到 [0,1]
+        y_new = np.clip(y_new, 0, 1)
+
+        # 记录
+        if i % 5 == 0 or i == max_iter - 1:
+            denoised_uint8 = (x_new * 255).astype(np.uint8)
+            psnr_val = psnr(clean_img, denoised_uint8, data_range=255)
+            ssim_val = ssim(clean_img, denoised_uint8, data_range=255)
+            psnrs.append(psnr_val)
+            ssims.append(ssim_val)
+
+        # 收敛检查
+        if np.linalg.norm(x_new - last_x) / (np.linalg.norm(last_x) + 1e-8) < tol:
+            break
+
+        last_x = x_new.copy()
+        x = x_new.copy()
+        y = y_new.copy()
+        t = t_new
+
+    # 修复这里的语法错误：ast -> astype
+    return (np.clip(x, 0, 1) * 255).astype(np.uint8), psnrs, ssims
+
+
+def admm_tv(noisy_img, clean_img, lambda_=None, rho=None, max_iter=200, tol=1e-4, min_iter=20):
+    """改进的ADMM-TV去噪算法，自动调参，增强稳定性"""
+    # 自适应参数设置
+    if lambda_ is None:
+        sigma_est = estimate_sigma(noisy_img, average_sigmas=True)
+        lambda_ = 0.5 * sigma_est  # 经验公式，可微调
+    if rho is None:
+        rho = 1.0  # 初始惩罚参数，后续可自适应调整
+
+    # 初始化变量
+    x = noisy_img.astype(np.float32)
+    z_x = np.zeros_like(noisy_img, dtype=np.float32)
+    z_y = np.zeros_like(noisy_img, dtype=np.float32)
+    u_x = np.zeros_like(noisy_img, dtype=np.float32)
+    u_y = np.zeros_like(noisy_img, dtype=np.float32)
+    last_x = x.copy()
+    psnrs = []
+    ssims = []
+
+    h, w = noisy_img.shape
+    eps = 1e-6  # 数值稳定性常数
+
+    # 构造拉普拉斯算子的FFT表示
+    laplacian = np.zeros((h, w), dtype=np.float32)
+    laplacian[0, 0] = 4.0
+    if w > 1:
+        laplacian[0, 1] = -1.0
+        laplacian[0, -1] = -1.0
+    if h > 1:
+        laplacian[1, 0] = -1.0
+        laplacian[-1, 0] = -1.0
+    laplacian_fft = scipy.fft.fft2(laplacian)
+
+    # 定义梯度算子（循环边界）
+    def grad(img):
+        gx = np.roll(img, -1, axis=1) - img
+        gy = np.roll(img, -1, axis=0) - img
+        return gx, gy
+
+    # 定义散度算子（循环边界）
+    def div(gx, gy):
+        gx_roll = np.roll(gx, 1, axis=1) - gx
+        gy_roll = np.roll(gy, 1, axis=0) - gy
+        return gx_roll + gy_roll
+
+    for i in range(max_iter):
+        # x-更新：求解线性系统 (I - ρΔ)x = b
+        div_zu = div(z_x - u_x, z_y - u_y)
+        b = noisy_img + rho * div_zu
+        b_fft = scipy.fft.fft2(b)
+        x_fft = b_fft / (1 + rho * (laplacian_fft + eps))
+        x_new = np.real(scipy.fft.ifft2(x_fft))
+        x_new = np.clip(x_new, 0, 255)
+
+        # z-更新：软阈值
+        dx, dy = grad(x_new)
+        z_x_new = soft_threshold(dx + u_x, lambda_ / rho)
+        z_y_new = soft_threshold(dy + u_y, lambda_ / rho)
+
+        # u-更新：对偶变量
+        u_x += dx - z_x_new
+        u_y += dy - z_y_new
+
+        # 记录指标
+        if i % 5 == 0 or i == max_iter - 1:
+            denoised_uint8 = np.clip(x_new, 0, 255).astype(np.uint8)
+            psnr_val = psnr(clean_img, denoised_uint8, data_range=255)
+            ssim_val = ssim(clean_img, denoised_uint8, data_range=255)
+            psnrs.append(psnr_val)
+            ssims.append(ssim_val)
+
+        # 检查收敛性
+        if i >= min_iter and np.linalg.norm(x_new - last_x) / (np.linalg.norm(last_x) + eps) < tol:
+            break
+
+        last_x = x_new.copy()
+        x = x_new.copy()
+        z_x, z_y = z_x_new, z_y_new
+
+    return np.clip(x, 0, 255).astype(np.uint8), psnrs, ssims
+
+
+def bm3d_denoise(noisy_img, clean_img, sigma):
+    """BM3D去噪算法"""
+    start_time = time.time()
+    denoised = bm3d.bm3d(noisy_img, sigma)
+    elapsed_time = time.time() - start_time
+    psnr_val = psnr(clean_img, denoised, data_range=255)
+    ssim_val = ssim(clean_img, denoised, data_range=255)
+    return denoised, psnr_val, ssim_val, elapsed_time
+
+
+def dncnn_denoise(noisy_img, clean_img):
+    """DnCNN去噪算法"""
+    if dncnn_model is None:
+        raise RuntimeError("DnCNN model is not available")
+
+    start_time = time.time()
+
+    # 预处理图像
+    noisy_norm = noisy_img.astype(np.float32) / 255.0
+    noisy_input = np.expand_dims(noisy_norm, axis=[0, -1])  # 添加batch和channel维度
+
+    # 预测
+    denoised_output = dncnn_model.predict(noisy_input, verbose=0)
+
+    # 后处理
+    denoised_img = np.clip(denoised_output[0, ..., 0] * 255, 0, 255).astype(np.uint8)
+    elapsed_time = time.time() - start_time
+
+    # 计算评估指标
+    psnr_val = psnr(clean_img, denoised_img, data_range=255)
+    ssim_val = ssim(clean_img, denoised_img, data_range=255)
+
+    return denoised_img, psnr_val, ssim_val, elapsed_time
+
+
+def ffdnet_denoise(noisy_img, clean_img, sigma=25):
+    """FFDNet去噪算法"""
+    if ffdnet_model is None:
+        raise RuntimeError("FFDNet model is not available")
+
+    start_time = time.time()
+
+    # 转换为PyTorch张量
+    noisy_tensor = torch.from_numpy(noisy_img.astype(np.float32) / 255.0).unsqueeze(0).unsqueeze(0)
+
+    # 创建噪声图（与输入图像相同大小的常数噪声水平图）
+    noise_map = torch.full_like(noisy_tensor, sigma / 255.0)
+
+    # 移动到设备
+    noisy_tensor = noisy_tensor.to(device)
+    noise_map = noise_map.to(device)
+
+    # 去噪
+    with torch.no_grad():
+        denoised_tensor = ffdnet_model(noisy_tensor, noise_map)
+
+    # 转换回numpy数组
+    denoised_img = denoised_tensor.squeeze().cpu().numpy()
+    denoised_img = np.clip(denoised_img * 255, 0, 255).astype(np.uint8)
+
+    elapsed_time = time.time() - start_time
+
+    # 计算评估指标
+    psnr_val = psnr(clean_img, denoised_img, data_range=255)
+    ssim_val = ssim(clean_img, denoised_img, data_range=255)
+
+    return denoised_img, psnr_val, ssim_val, elapsed_time
+
+
+def unet_denoise(noisy_img, clean_img):
+    """U-Net去噪算法"""
+    if unet_model is None:
+        raise RuntimeError("U-Net model is not available")
+
+    start_time = time.time()
+
+    # 转换为PyTorch张量
+    noisy_tensor = torch.from_numpy(noisy_img.astype(np.float32) / 255.0).unsqueeze(0).unsqueeze(0)
+
+    # 移动到设备
+    noisy_tensor = noisy_tensor.to(device)
+
+    # 去噪
+    with torch.no_grad():
+        denoised_tensor = unet_model(noisy_tensor)
+
+    # 转换回numpy数组
+    denoised_img = denoised_tensor.squeeze().cpu().numpy()
+    denoised_img = np.clip(denoised_img * 255, 0, 255).astype(np.uint8)
+
+    elapsed_time = time.time() - start_time
+
+    # 计算评估指标
+    psnr_val = psnr(clean_img, denoised_img, data_range=255)
+    ssim_val = ssim(clean_img, denoised_img, data_range=255)
+
+    return denoised_img, psnr_val, ssim_val, elapsed_time
+
+
+def process_image(image_path, noise_type='gaussian', noise_param=25, max_iter=100, resize=True):
+    """处理单个图像"""
+    clean_img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+    if clean_img is None:
+        print(f"Error: Could not read image {image_path}")
+        return None, None, None
+
+    if resize:
+        clean_img = cv2.resize(clean_img, (256, 256))
+
+    # 确保是numpy数组
+    if not isinstance(clean_img, np.ndarray):
+            clean_img = np.array(clean_img)
+
+    # 添加噪声
+    if noise_type == 'gaussian':
+        noisy_img = add_gaussian_noise(clean_img, noise_param)
+    else:
+        raise ValueError(f"Unknown noise type: {noise_type}")
+
+    # 确保噪声图像也是numpy数组
+    if not isinstance(noisy_img, np.ndarray):
+            noisy_img = np.array(noisy_img)
+
+    results = {}
+    times = {}
+
+    # BM3D
+    start_time = time.time()
+    bm3d_denoised, bm3d_psnr, bm3d_ssim, bm3d_time = bm3d_denoise(
+        noisy_img, clean_img, noise_param)
+    results['BM3D'] = {'img': bm3d_denoised, 'psnr': bm3d_psnr, 'ssim': bm3d_ssim}
+    times['BM3D'] = bm3d_time
+
+    # DnCNN (仅在模型可用时运行)
+    if dncnn_model is not None:
+        try:
+            start_time = time.time()
+            dncnn_denoised, dncnn_psnr, dncnn_ssim, dncnn_time = dncnn_denoise(noisy_img, clean_img)
+            results['DnCNN'] = {
+                'img': dncnn_denoised,
+                'psnr': dncnn_psnr,
+                'ssim': dncnn_ssim
+            }
+            times['DnCNN'] = dncnn_time
+        except Exception as e:
+            print(f"Error running DnCNN: {e}")
+
+    # FFDNet (仅在模型可用时运行)
+    if ffdnet_model is not None:
+        try:
+            start_time = time.time()
+            ffdnet_denoised, ffdnet_psnr, ffdnet_ssim, ffdnet_time = ffdnet_denoise(
+                noisy_img, clean_img, sigma=noise_param)
+            results['FFDNet'] = {
+                'img': ffdnet_denoised,
+                'psnr': ffdnet_psnr,
+                'ssim': ffdnet_ssim
+            }
+            times['FFDNet'] = ffdnet_time
+        except Exception as e:
+            print(f"Error running FFDNet: {e}")
+
+    # U-Net (仅在模型可用时运行)
+    if unet_model is not None:
+        try:
+            start_time = time.time()
+            unet_denoised, unet_psnr, unet_ssim, unet_time = unet_denoise(noisy_img, clean_img)
+            results['UNet'] = {
+                'img': unet_denoised,
+                'psnr': unet_psnr,
+                'ssim': unet_ssim
+            }
+            times['UNet'] = unet_time
+        except Exception as e:
+            print(f"Error running U-Net: {e}")
+
+    # ISTA
+    start_time = time.time()
+    ista_denoised, ista_psnrs, ista_ssims = ista_l1(
+        noisy_img, clean_img, lambda_=20,
+        max_iter=max_iter)
+    results['ISTA'] = {
+        'img': ista_denoised,
+        'psnr': psnr(clean_img, ista_denoised, data_range=255),
+        'ssim': ssim(clean_img, ista_denoised, data_range=255)
+    }
+    times['ISTA'] = time.time() - start_time
+
+    # FISTA
+    start_time = time.time()
+    fista_tv_denoised, fista_tv_psnrs, fista_tv_ssims = fista_tv(
+        noisy_img, clean_img, max_iter=150)
+    results['FISTA'] = {
+        'img': fista_tv_denoised,
+        'psnr': psnr(clean_img, fista_tv_denoised, data_range=255),
+        'ssim': ssim(clean_img, fista_tv_denoised, data_range=255)
+    }
+    times['FISTA'] = time.time() - start_time
+
+    # ADMM
+    start_time = time.time()
+    admm_denoised, admm_psnrs, admm_ssims = admm_tv(
+        noisy_img, clean_img, max_iter=200)
+    results['ADMM'] = {
+        'img': admm_denoised,
+        'psnr': psnr(clean_img, admm_denoised, data_range=255),
+        'ssim': ssim(clean_img, admm_denoised, data_range=255)
+    }
+    times['ADMM'] = time.time() - start_time
+
+    return clean_img, noisy_img, results, times
+
+
+def plot_results(clean_img, noisy_img, results, image_name, noise_type, noise_param, save_dir='Unet_results/image'):
+    """可视化结果并保存"""
+    plt.figure(figsize=(15, 4))
+
+    algorithms = ['BM3D', 'DnCNN', 'FFDNet', 'UNet']
+    num_algorithms = len([algo for algo in algorithms if algo in results])
+
+    plt.subplot(1, 6, 1)
+    plt.imshow(clean_img, cmap='gray')
+    plt.title('Clean Image')
+    plt.axis('off')
+
+    plt.subplot(1, 6, 2)
+    plt.imshow(noisy_img, cmap='gray')
+    plt.title(f'Noisy Image\n({noise_type}, param={noise_param})')
+    plt.axis('off')
+
+    for i, algo in enumerate(algorithms):
+        if algo in results:
+            plt.subplot(1, 6, i + 3)
+            plt.imshow(results[algo]['img'], cmap='gray')
+            plt.title(f"{algo}\nPSNR: {results[algo]['psnr']:.2f} dB\nSSIM: {results[algo]['ssim']:.4f}")
+            plt.axis('off')
+
+    plt.suptitle(f'Image: {image_name}', fontsize=16)
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+
+    noise_dir = os.path.join(save_dir, noise_type, str(noise_param))
+    os.makedirs(noise_dir, exist_ok=True)
+    save_path = os.path.join(noise_dir, f'denoising_{image_name}')
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.close()
+
+
+def save_results_to_csv(all_results, save_path='Unet_results/summary.csv'):
+    """保存所有结果到CSV文件"""
+    data = []
+    for (image_name, noise_type, noise_param), results in all_results.items():
+        for algo, metrics in results.items():
+            data.append({
+                'Image': image_name,
+                'NoiseType': noise_type,
+                'NoiseParam': noise_param,
+                'Algorithm': algo,
+                'PSNR': metrics['psnr'],
+                'SSIM': metrics['ssim'],
+                'Time': metrics['time']
+            })
+
+    df = pd.DataFrame(data)
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    df.to_csv(save_path, index=False)
+    return df
+
+
+def print_summary_table(df):
+    """打印汇总表格"""
+    avg_results = df.groupby(['NoiseType', 'NoiseParam', 'Algorithm']).agg({
+        'PSNR': 'mean',
+        'SSIM': 'mean',
+        'Time': 'mean'
+    }).reset_index()
+
+    print("\n" + "=" * 120)
+    print("Average Performance Across All Images")
+    print("=" * 120)
+    print(
+        f"{'NoiseType':<15}{'NoiseParam':<15}{'Algorithm':<15}{'Avg PSNR (dB)':<15}{'Avg SSIM':<15}{'Avg Time (s)':<15}")
+    print("-" * 120)
+
+    for _, row in avg_results.iterrows():
+        print(f"{row['NoiseType']:<15}{row['NoiseParam']:<15}{row['Algorithm']:<15}"
+              f"{row['PSNR']:<15.2f}{row['SSIM']:<15.4f}{row['Time']:<15.2f}")
+
+    print("=" * 120)
+
+
+def main():
+    # 设置随机种子以确保结果可重现
+    np.random.seed(42)
+    torch.manual_seed(42)
+
+    dataset_path = '/project/week6/data/Test/Set14'
+    image_paths = glob.glob(os.path.join(dataset_path, '*.png')) + \
+                  glob.glob(os.path.join(dataset_path, '*.jpg')) + \
+                  glob.glob(os.path.join(dataset_path, '*.bmp'))
+
+    if not image_paths:
+        print(f"No images found in {dataset_path}. Using sample image.")
+        clean_img = np.ones((256, 256), dtype=np.uint8) * 128
+        cv2.putText(clean_img, 'Sample Image', (50, 128),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, 255, 2)
+        cv2.imwrite('sample.png', clean_img)
+        image_paths = ['sample.png']
+
+    # 定义噪声配置（只保留高斯噪声）
+    noise_configs = [
+        ('gaussian', 15),
+        ('gaussian', 25),
+        ('gaussian', 50)
+    ]
+
+    all_results = {}
+    total_images = len(image_paths) * len(noise_configs)
+
+    with tqdm(total=total_images, desc="Processing images") as pbar:
+        for image_path in image_paths:
+            image_name = os.path.basename(image_path).split('.')[0]
+
+            for noise_type, noise_param in noise_configs:
+                try:
+                    clean_img, noisy_img, results, times = process_image(
+                        image_path, noise_type, noise_param, max_iter=100)
+
+                    # 存储结果
+                    key = (image_name, noise_type, noise_param)
+                    all_results[key] = {}
+
+                    for algo in results:
+                        all_results[key][algo] = {
+                            'psnr': results[algo]['psnr'],
+                            'ssim': results[algo]['ssim'],
+                            'time': times[algo]
+                        }
+
+                    # 可视化并保存结果
+                    plot_results(clean_img, noisy_img, results, image_name,
+                                 noise_type, noise_param)
+
+                    pbar.update(1)
+                    pbar.set_postfix_str(f"Image: {image_name}, Noise: {noise_type} {noise_param}")
+
+                except Exception as e:
+                    print(f"Error processing {image_path} with {noise_type} {noise_param}: {e}")
+                    continue
+
+    # 保存结果到CSV并打印汇总
+    df = save_results_to_csv(all_results)
+    print_summary_table(df)
+
+    print(f"\nProcessing completed! Results saved to Unet_results/ directory.")
+
+
+if __name__ == "__main__":
+    main()
