@@ -84,7 +84,7 @@ project
 │   ├── N2N_results2/                              # 输出结果
 │   │   ├──image
 │   │   ├──metrics                                 # 汇总统计        
-│   ├── n2n_new2.py                                    # 主程序(彩色）    
+│   ├── n2n_new2.py                                # 主程序(彩色）    
 │   ├── train_Unet.py                              # 模型训练
 │   └── UNet_README.md                 
 ```
