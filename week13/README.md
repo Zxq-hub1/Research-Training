@@ -72,7 +72,7 @@ project
 
 ##  实验结果示例
 
-1)DIP去噪
+1)DIP去噪(左：去噪结果，右：干净图像）
 ![](https://github.com/Zxq-hub1/Research-Training/blob/main/week13/DIP/ppt3_results/output3.png?raw=true)
 
 2)S2S去噪
@@ -111,3 +111,4 @@ Self2Self 与 Deep Image Prior（DIP）虽同属“无需干净样本”的自�
 
 
 ---
+
