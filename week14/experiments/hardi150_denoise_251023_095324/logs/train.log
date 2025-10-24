@@ -1,0 +1,124 @@
+25-10-23 09:53:24.318 - INFO:   name: hardi150
+  phase: val
+  gpu_ids: [0]
+  path:[
+    log: experiments/hardi150_denoise_251023_095324/logs
+    tb_logger: experiments/hardi150_denoise_251023_095324/tb_logger
+    results: experiments/hardi150_denoise_251023_095324/results
+    checkpoint: experiments/hardi150_denoise_251023_095324/experiments/hardi150_251020_075432/checkpoint
+    resume_state: experiments/hardi150_251020_075432/checkpoint/latest
+    experiments_root: experiments/hardi150_denoise_251023_095324
+  ]
+  datasets:[
+    train:[
+      name: hardi
+      dataroot: ./data/HARDI150.nii.gz
+      valid_mask: [10, 160]
+      phase: train
+      padding: 3
+      val_volume_idx: 40
+      val_slice_idx: 40
+      batch_size: 32
+      in_channel: 1
+      num_workers: 0
+      use_shuffle: True
+    ]
+    val:[
+      name: hardi
+      dataroot: ./data/HARDI150.nii.gz
+      valid_mask: [10, 160]
+      phase: val
+      padding: 3
+      val_volume_idx: 40
+      val_slice_idx: 40
+      batch_size: 1
+      in_channel: 1
+      num_workers: 0
+    ]
+  ]
+  model:[
+    which_model_G: mri
+    finetune_norm: False
+    drop_rate: 0.0
+    unet:[
+      in_channel: 1
+      out_channel: 1
+      inner_channel: 32
+      norm_groups: 32
+      channel_multiplier: [1, 2, 4, 8, 8]
+      attn_res: [16]
+      res_blocks: 2
+      dropout: 0.0
+      version: v1
+    ]
+    beta_schedule:[
+      train:[
+        schedule: rev_warmup70
+        n_timestep: 1000
+        linear_start: 5e-05
+        linear_end: 0.01
+      ]
+      val:[
+        schedule: rev_warmup70
+        n_timestep: 1000
+        linear_start: 5e-05
+        linear_end: 0.01
+      ]
+    ]
+    diffusion:[
+      image_size: 128
+      channels: 3
+      conditional: True
+    ]
+  ]
+  train:[
+    n_iter: 100000
+    val_freq: 1000
+    save_checkpoint_freq: 10000
+    print_freq: 100
+    optimizer:[
+      type: adam
+      lr: 0.0001
+    ]
+    ema_scheduler:[
+      step_start_ema: 5000
+      update_ema_every: 1
+      ema_decay: 0.9999
+    ]
+  ]
+  noise_model:[
+    resume_state: experiments/hardi150_noisemodel_251019_143302/checkpoint/latest
+    drop_rate: 0.0
+    unet:[
+      in_channel: 2
+      out_channel: 1
+      inner_channel: 32
+      norm_groups: 32
+      channel_multiplier: [1, 2, 4, 8, 8]
+      attn_res: [16]
+      res_blocks: 2
+      dropout: 0.0
+      version: v1
+    ]
+    beta_schedule:[
+      linear_start: 5e-05
+      linear_end: 0.01
+    ]
+    n_iter: 10000
+    val_freq: 2000
+    save_checkpoint_freq: 10000
+    print_freq: 1000
+    optimizer:[
+      type: adam
+      lr: 0.0001
+    ]
+  ]
+  stage2_file: experiments/hardi150_stage2_state.txt
+  distributed: False
+
+25-10-23 09:53:32.742 - INFO: MRI dataset [hardi] is created.
+25-10-23 09:53:32.743 - INFO: Initial Dataset Finished
+25-10-23 09:53:33.489 - INFO: Loading stage2 pretrained model for G [experiments/hardi150_251020_075432/checkpoint/latest] ...
+25-10-23 09:53:33.684 - INFO: [DDM2] is created.
+25-10-23 09:53:33.685 - INFO: Initial Model Finished
+25-10-23 09:53:33.686 - INFO: Begin Model Inference.
