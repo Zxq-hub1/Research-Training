@@ -136,9 +136,6 @@ def process_calgaryCampinas(data_path, out_path, sampling_rate=1.):
 
 if __name__ == '__main__':
 
-    process_fastMRI('.../data/fastMRI/local/MRIDatasets/knee_singlecoil_train/singlecoil_train', '.../data/fastMRI/train')
-    process_fastMRI('/home/rzhou/local/MRIDatasets/knee_singlecoil_train/singlecoil_val', '.../data/fastMRI/val', 0.06)
-
-    # mat2npy('/data/SIAT/train', '/data/TRPA_prepared/SIAT/train')
-    # mat2npy('/data/SIAT/test', '/data/TRPA_prepared/SIAT/test')
+    mat2npy('/data/SIAT/train', '/data/TRPA_prepared/SIAT/train')
+    mat2npy('/data/SIAT/test', '/data/TRPA_prepared/SIAT/test')
    
