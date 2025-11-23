@@ -1,0 +1,55 @@
+[model_arguments]
+v2 = false
+v_parameterization = false
+pretrained_model_name_or_path = "/202521000855/ZXQ/project/SD-Train/datasets/WeThinkIn_SD_二次元模型.safetensors"
+tokenizer_cache_dir = "/202521000855/ZXQ/project/SD-Train/tokenizer"
+
+[optimizer_arguments]
+optimizer_type = "AdamW8bit"
+learning_rate = 2e-6
+max_grad_norm = 1.0
+train_text_encoder = false
+lr_scheduler = "constant"
+lr_warmup_steps = 0
+
+[dataset_arguments]
+debug_dataset = false
+in_json = "/202521000855/ZXQ/project/SD-Train/datasets/pokemon_data/meta_lat.json"
+train_data_dir = "/202521000855/ZXQ/project/SD-Train/datasets/pokemon_data"
+dataset_repeats = 10
+shuffle_caption = true
+keep_tokens = 0
+resolution = "512,512"
+caption_dropout_rate = 0
+caption_tag_dropout_rate = 0
+caption_dropout_every_n_epochs = 0
+color_aug = false
+token_warmup_min = 1
+token_warmup_step = 0
+
+[training_arguments]
+output_dir = "/202521000855/ZXQ/project/SD-Train/models/SD_ZXQ"
+output_name = "sd_finetune_ZXQ"
+save_precision = "fp16"
+save_n_epoch_ratio = 1conda
+save_state = false
+train_batch_size = 2
+max_token_length = 225
+mem_eff_attn = false
+xformers = true
+max_train_steps = 15000
+max_data_loader_n_workers = 8
+persistent_data_loader_workers = true
+gradient_checkpointing = true
+gradient_accumulation_steps = 1
+mixed_precision = "fp16"
+clip_skip = 2
+logging_dir = "/202521000855/ZXQ/project/SD-Train/models/SD_ZXQ/logs"
+log_prefix = "sd_finetune_ZXQ1"
+
+[sample_prompt_arguments]
+sample_every_n_steps = 100
+sample_sampler = "ddim"
+
+[saving_arguments]
+save_model_as = "safetensors"
