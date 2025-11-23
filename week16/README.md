@@ -68,20 +68,20 @@ Stable Diffusion是AI绘画领域的一个核心模型，能够进行文生图�
       --max_data_loader_n_workers=2 （设置大于等于2，加速数据处理）  
     ```  
   
-（2）使用Waifu Diffusion v1.4模型自动标注tag标签:    
-```bash
-python tag_images_by_wd14_tagger.py 
-  "/202521000855/ZXQ/project/SD-Train/datasets/pokemon_data" （训练集路径）
-  --batch_size=8 （每次传入Waifu Diffusion v1.4模型进行前向处理的数据数量）
-  --model_dir="../tag_models/wd-v1-4-moat-tagger-v2"(加载本地v1.4模型路径）
-  --remove_underscore （开启会将输出tag关键词中的下划线替换为空格）
-  --general_threshold=0.35 （设置常规tag关键词的筛选置信度）
-  --character_threshold=0.35 （设置特定人物特征tag关键词的筛选置信度）
-  --caption_extension=".txt" （设置tag关键词标签的扩展名）
-  --max_data_loader_n_workers=2 （设置大于等于2，加速数据处理）
-  --debug 
-  --undesired_tags=""（设置不需要保存的tag关键词
-```
+ （2）使用Waifu Diffusion v1.4模型自动标注tag标签:    
+   ```bash
+   python tag_images_by_wd14_tagger.py 
+     "/202521000855/ZXQ/project/SD-Train/datasets/pokemon_data" （训练集路径）
+     --batch_size=8 （每次传入Waifu Diffusion v1.4模型进行前向处理的数据数量）
+     --model_dir="../tag_models/wd-v1-4-moat-tagger-v2"(加载本地v1.4模型路径）
+     --remove_underscore （开启会将输出tag关键词中的下划线替换为空格）
+     --general_threshold=0.35 （设置常规tag关键词的筛选置信度）
+     --character_threshold=0.35 （设置特定人物特征tag关键词的筛选置信度）
+     --caption_extension=".txt" （设置tag关键词标签的扩展名）
+     --max_data_loader_n_workers=2 （设置大于等于2，加速数据处理）
+     --debug 
+     --undesired_tags=""（设置不需要保存的tag关键词
+   ```
 
 （3）训练数据预处理  
 * 对生成的.caption和.txt的标注文件进行整合存储为json文件：  
@@ -124,7 +124,7 @@ python tag_images_by_wd14_tagger.py
 1）SD模型出图结果
 ![](https://github.com/Zxq-hub1/Research-Training/blob/main/week16/output/3.jpg?raw=true)
 
-2)Lora模型样例输出
+2)Lora模型样例输出(图片为模型训练过程中的过程sample图片，使用模型生成图片时效果不是很好，还需要调整）
 ![](https://github.com/Zxq-hub1/Research-Training/blob/main/week16/output/lora.jpg?raw=true)
 
 
